@@ -7,9 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,76 +15,10 @@ import (
 	"time"
 )
 
-type AlertInfo struct {
-	Alert string `json:"alert"`
-	Badge int    `json:"badge"`
-	Sound string `json:"sound"`
-}
-
-type Payload struct {
-	Aps    *AlertInfo `json:"aps"`
-	Custom interface{}
-}
-
-/**
-* 要推送给用户的消息
- */
-type Notification struct {
-	Token   string
-	Payload *Payload
-	App     string
-}
-
-/**
-* 从apple APNS服务器返回的结果
- */
-type APNSRespone struct {
-	Command    byte
-	Status     byte
-	Identifier int32
-	Connection *tls.Conn
-	App        string
-	Sandbox    bool
-}
-
-/**
-* 从本地到apple APNS服务器的Socket连接信息
- */
-type ConnectInfo struct {
-	Connection *tls.Conn
-	App        string
-	Sandbox    bool
-}
-
-////////////////////// Global Variables ///////////////////////////
-
-/// channels
-var socketCN chan *ConnectInfo = make(chan *ConnectInfo)    // 到APNS的socket频道
-var messageCN chan *Notification = make(chan *Notification) // 新推送消息的频道
-var responseCN chan *APNSRespone = make(chan *APNSRespone)  // APNS服务端返回错误响应频道
-
-// socket container
-var sockets map[string]*tls.Conn = make(map[string]*tls.Conn)
-
-var testConn *tls.Conn
-
-// configs
-
-var appsDir string // 推送应用的根目录
-var appPort int    // web接口的端口
-
-//////////// HTTP Method ////////////////
-
-func pushHandler(w http.ResponseWriter, request *http.Request) {
-	log.Print("handle push request")
-	//go pushMessage(testConn)
-	message := &Notification{
-		Token: "7171d635e3e44dd34f4b18893de50c1476805f921e28d92e76a9e29a5281c576",
-		Payload: &Payload{
-			Aps: &AlertInfo{Alert: "你好，姐夫", Badge: 1, Sound: ""}},
-		App: "com.toraysoft.music"}
-	go notify(message)
-	io.WriteString(w, "hello go apns!")
+func Initialize() {
+	// 初始化一些变量
+	appsDir = "/Users/jeff/Desktop/pushapps"
+	appPort = 8080
 }
 
 func connect(app string, keyFile string, certFile string, sandbox bool) {
@@ -121,15 +53,17 @@ func monitorConn(conn *tls.Conn, app string, sandbox bool) {
 	reply := make([]byte, 6)
 	n, err := conn.Read(reply)
 
-	if err != nil {
+	if err != nil && reply[0] != 8 {
 		log.Printf("error when read from socket %s, %d", err, n)
 	}
 	fmt.Printf("return %x", reply)
-	rsp := &APNSRespone{8, 8, 1024, conn, app, sandbox}
+	buf := bytes.NewBuffer(reply[2:])
+	id, _ := binary.ReadUvarint(buf)
+	rsp := &APNSRespone{reply[0], reply[1], int32(id), conn, app, sandbox}
 	responseCN <- rsp
 }
 
-func socketConnected(info *ConnectInfo) {
+func SocketConnected(info *ConnectInfo) {
 	app := info.App
 	if info.Sandbox {
 		app = app + "_dev"
@@ -138,14 +72,6 @@ func socketConnected(info *ConnectInfo) {
 		delete(sockets, app)
 	}
 	sockets[app] = info.Connection
-	//sockets[app] = make([]*tls.Conn, 0, 100)
-	// log.Printf("sockets %x and for app %x\n", sockets, sockets[app])
-	// length := len(sockets[app])
-	// log.Printf("length %d and cap %d\n", length, cap(sockets[app]))
-	// if length < cap(sockets[app]) {
-	// 	//sockets[app][length] = info.Connection
-	// 	sockets[app] = append(sockets[app], info.Connection)
-	// }
 
 	go monitorConn(info.Connection, info.App, info.Sandbox)
 }
@@ -153,7 +79,7 @@ func socketConnected(info *ConnectInfo) {
 /**
 初始化socket连接，创建完后扔给channel
 */
-func makeSocket() {
+func MakeSocket() {
 	// 创建几个socket？创建完后，由谁管理。
 	walkErr := filepath.Walk(appsDir, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -183,27 +109,13 @@ func makeSocket() {
 }
 
 /**
-启动http服务，接受HTTP推送请求
-*/
-func startHttpServer() {
-	log.Print("starting Http server")
-	http.HandleFunc("/push", pushHandler)
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		log.Printf("http server start fail %s \n", err)
-	} else {
-		log.Print("http server started!")
-	}
-}
-
-/**
 监听redis队列，主动获取推送消息
 */
-func subscribeRedisQ() {
+func SubscribeRedisQ() {
 	log.Print("subscribing Redis Queue")
 }
 
-func notify(message *Notification) {
+func Notify(message *Notification) {
 	// 根据app找到相应的socket。
 	conn := sockets[message.App]
 	if conn == nil {
@@ -211,16 +123,14 @@ func notify(message *Notification) {
 	}
 
 	// 生成消息id
-	var msgID int32
-	msgID = 10010
+
+	msgID := GetIndentity()
 
 	// 消息存入缓存，过期消失，如果失败会尝试重发。
-	pushMessage(conn, message.Token, msgID, message.Payload)
+	go pushMessage(conn, message.Token, msgID, message.Payload)
 }
 
 func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload) {
-	// info := AlertInfo{"你好，我是来自地球的男人，问一问你现在过得怎么样了，这条消息那么长，你看得了吗？看得完吗？在推送的界面里面。", 1, "default"}
-	// payload := Payload{Aps: info}
 	fmt.Print(payload)
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -285,49 +195,24 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 - 记录发送失败的原因
 - 重发indentifier之后的消息。
 */
-func handleError(err *APNSRespone) {
+func HandleError(err *APNSRespone) {
 	log.Print("Got an response from APNS Gateway")
+
 	// 干掉这条socket
-
-	// 重建socket
-}
-
-func initialize() {
-	// 初始化一些变量
-	appsDir = "/Users/jeff/Desktop/pushapps"
-	appPort = 8080
-}
-
-func main() {
-	log.Print("GO! APNS GO!")
-	initialize()
-	// 创建连接。
-	go makeSocket()
-
-	// 启动http服务。
-	go startHttpServer()
-
-	// 监听队列，视配置定
-	go subscribeRedisQ()
-
-	// 监听新应用或移除应用
-
-	log.Print("Just wait for the channels")
-	for {
-		select {
-		case info := <-socketCN:
-			// 一条通向APNS的socket连接完成！
-			log.Printf("socket for %s created!\n", info.App)
-			socketConnected(info)
-		case message := <-messageCN:
-			// 收到一条要推送的消息！
-			log.Printf("got new message %s\n", message)
-			notify(message)
-		case rsp := <-responseCN:
-			// 收到一条来自APNS的错误通知
-			log.Printf("got apns erro response for %s\n", rsp.App)
-			handleError(rsp)
-		}
+	socketKey := err.App
+	dir := appsDir + "/" + err.App
+	if err.Sandbox {
+		socketKey = err.App + "_dev"
+		dir = dir + "/develop"
+	} else {
+		dir = dir + "/production"
 	}
-	log.Print("end of server!")
+	delete(sockets, socketKey)
+	log.Println("after kill the socket ", sockets)
+
+	// TODO:重建socket, 重建完成后需要重发该错误ID之后的消息。
+	if err.Command == 8 {
+		LogError(err.Status, err.Identifier)
+	}
+	go connect(err.App, dir+"/key.pem", dir+"/cer.pem", err.Sandbox)
 }
