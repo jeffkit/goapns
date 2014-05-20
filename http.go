@@ -50,7 +50,7 @@ func pushHandler(w http.ResponseWriter, request *http.Request) {
 	sb := request.FormValue("sandbox")
 	if sb == "1" || sb == "true" {
 		sandbox = true
-		app = app + "_dev"
+		app = app + DEVELOP_SUBFIX
 	}
 	if sockets[app] == nil {
 		io.WriteString(w, "invalid app")
@@ -74,8 +74,8 @@ func pushHandler(w http.ResponseWriter, request *http.Request) {
 			token = strings.Replace(token, "sb:", "", -1)
 			tokenSb = true
 
-			if !strings.HasSuffix(app, "_dev") {
-				tokenApp = app + "_dev"
+			if !strings.HasSuffix(app, DEVELOP_SUBFIX) {
+				tokenApp = app + DEVELOP_SUBFIX
 			}
 		}
 		notification := &Notification{Token: token, Payload: payload, App: tokenApp, Sandbox: tokenSb}

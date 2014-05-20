@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/tls"
 	"log"
 	"math"
 )
@@ -15,7 +14,7 @@ var responseCN chan *APNSRespone = make(chan *APNSRespone)  // APNS服务端返�
 var identityCN chan int32 = make(chan int32, 4)             // id生成器
 
 // socket container
-var sockets map[string]*tls.Conn = make(map[string]*tls.Conn)
+var sockets map[string]*ConnectInfo = make(map[string]*ConnectInfo)
 
 // configs
 
@@ -36,6 +35,15 @@ const (
 	APNS_ERROR_INVALID_TOKEN        = 8
 	APNS_ERROR_SHUTDOWN             = 10
 	APNS_ERROR_NONE                 = 255
+
+	DEVELOP_SUBFIX    = "_dev"
+	DEVELOP_FOLDER    = "develop"
+	PRODUCTION_FOLDER = "production"
+	CERT_FILE_NAME    = "cer.pem"
+	KEY_FILE_NAME     = "key.pem"
+
+	APNS_ENDPOINT         = "gateway.push.apple.com:2195"
+	APNS_SANDBOX_ENDPOINT = "gateway.sandbox.push.apple.com:2195"
 )
 
 func LogError(errno byte, msgID int32) {

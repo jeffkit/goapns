@@ -41,7 +41,8 @@ type APNSRespone struct {
 * 从本地到apple APNS服务器的Socket连接信息
  */
 type ConnectInfo struct {
-	Connection *tls.Conn
-	App        string
-	Sandbox    bool
+	Connection       *tls.Conn
+	App              string
+	Sandbox          bool
+	currentIndentity int32
 }

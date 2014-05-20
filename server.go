@@ -27,9 +27,9 @@ func connect(app string, keyFile string, certFile string, sandbox bool) {
 		log.Printf("server : loadKeys: %s", err)
 	}
 	config := tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
-	endPoint := "gateway.push.apple.com:2195"
+	endPoint := APNS_ENDPOINT
 	if sandbox {
-		endPoint = "gateway.sandbox.push.apple.com:2195"
+		endPoint = APNS_SANDBOX_ENDPOINT
 	}
 	conn, err := tls.Dial("tcp", endPoint, &config)
 	if err != nil {
@@ -56,7 +56,7 @@ func monitorConn(conn *tls.Conn, app string, sandbox bool) {
 	if err != nil && reply[0] != 8 {
 		log.Printf("error when read from socket %s, %d", err, n)
 	}
-	fmt.Printf("return %x", reply)
+	log.Printf("return %x", reply)
 	buf := bytes.NewBuffer(reply[2:])
 	id, _ := binary.ReadUvarint(buf)
 	rsp := &APNSRespone{reply[0], reply[1], int32(id), conn, app, sandbox}
@@ -66,12 +66,13 @@ func monitorConn(conn *tls.Conn, app string, sandbox bool) {
 func SocketConnected(info *ConnectInfo) {
 	app := info.App
 	if info.Sandbox {
-		app = app + "_dev"
+		app = path.Join(app, DEVELOP_SUBFIX)
 	}
-	if sockets[app] != nil {
-		delete(sockets, app)
+	if sockets[app] == nil {
+		sockets[app] = info
+	} else {
+		sockets[app].Connection = info.Connection
 	}
-	sockets[app] = info.Connection
 
 	go monitorConn(info.Connection, info.App, info.Sandbox)
 }
@@ -89,17 +90,22 @@ func MakeSocket() {
 			return nil
 		}
 
-		if info.Name() != "develop" && info.Name() != "production" {
+		if info.Name() != DEVELOP_FOLDER && info.Name() != PRODUCTION_FOLDER {
 			return nil
 		}
 
-		app := strings.Replace(path.Dir(filePath), appsDir+"/", "", 1)
+		buff := bytes.NewBufferString(appsDir)
+		buff.WriteRune(os.PathSeparator)
+		app := strings.Replace(path.Dir(filePath), buff.String(), "", 1)
 		log.Println("create socket for app :", app)
 		sandbox := false
-		if info.Name() == "develop" {
+		if info.Name() == DEVELOP_FOLDER {
 			sandbox = true
 		}
-		go connect(app, filePath+"/key.pem", filePath+"/cer.pem", sandbox)
+		go connect(app,
+			path.Join(filePath, KEY_FILE_NAME),
+			path.Join(filePath, CERT_FILE_NAME),
+			sandbox)
 		return nil
 	})
 
@@ -117,17 +123,19 @@ func SubscribeRedisQ() {
 
 func Notify(message *Notification) {
 	// 根据app找到相应的socket。
-	conn := sockets[message.App]
+	info := sockets[message.App]
+	conn := info.Connection
 	if conn == nil {
+		// 扔进等待队列。
 		return
 	}
-
 	// 生成消息id
 
 	msgID := GetIndentity()
 
 	// 消息存入缓存，过期消失，如果失败会尝试重发。
 	go pushMessage(conn, message.Token, msgID, message.Payload)
+	info.currentIndentity = msgID
 }
 
 func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload) {
@@ -200,19 +208,22 @@ func HandleError(err *APNSRespone) {
 
 	// 干掉这条socket
 	socketKey := err.App
-	dir := appsDir + "/" + err.App
+	dir := path.Join(appsDir, err.App)
 	if err.Sandbox {
-		socketKey = err.App + "_dev"
-		dir = dir + "/develop"
+		socketKey = err.App + DEVELOP_SUBFIX
+		dir = path.Join(dir, DEVELOP_FOLDER)
 	} else {
-		dir = dir + "/production"
+		dir = path.Join(dir, PRODUCTION_FOLDER)
 	}
-	delete(sockets, socketKey)
-	log.Println("after kill the socket ", sockets)
+
+	sockets[socketKey].Connection = nil
 
 	// TODO:重建socket, 重建完成后需要重发该错误ID之后的消息。
 	if err.Command == 8 {
 		LogError(err.Status, err.Identifier)
 	}
-	go connect(err.App, dir+"/key.pem", dir+"/cer.pem", err.Sandbox)
+	go connect(err.App,
+		path.Join(dir, KEY_FILE_NAME),
+		path.Join(dir, CERT_FILE_NAME),
+		err.Sandbox)
 }
