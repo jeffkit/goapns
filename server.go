@@ -33,15 +33,18 @@ func connect(app string, keyFile string, certFile string, sandbox bool) {
 	}
 	conn, err := tls.Dial("tcp", endPoint, &config)
 	if err != nil {
-		log.Print("连接服务器有误")
+		log.Println("连接服务器有误", err)
 		return
 	}
-	log.Print("client is connect to ", conn.RemoteAddr())
+	log.Println("client is connect to ", conn.RemoteAddr())
 	state := conn.ConnectionState()
 
-	log.Print("client: hand shake ", state.HandshakeComplete)
-	log.Print("client: mutual", state.NegotiatedProtocolIsMutual)
-	info := &ConnectInfo{conn, app, sandbox}
+	log.Println("client: hand shake ", state.HandshakeComplete)
+	log.Println("client: mutual", state.NegotiatedProtocolIsMutual)
+	if sandbox {
+		app = app + DEVELOP_SUBFIX
+	}
+	info := &ConnectInfo{conn, app, sandbox, 0, 0}
 	socketCN <- info
 }
 
@@ -56,25 +59,33 @@ func monitorConn(conn *tls.Conn, app string, sandbox bool) {
 	if err != nil && reply[0] != 8 {
 		log.Printf("error when read from socket %s, %d", err, n)
 	}
-	log.Printf("return %x", reply)
+	log.Printf("return %x, the id is %x", reply, reply[2:])
 	buf := bytes.NewBuffer(reply[2:])
-	id, _ := binary.ReadUvarint(buf)
+	var id int32
+	err = binary.Read(buf, binary.BigEndian, &id)
+	if id == 0 {
+		log.Println("invalid id")
+		return
+	}
 	rsp := &APNSRespone{reply[0], reply[1], int32(id), conn, app, sandbox}
 	responseCN <- rsp
 }
 
 func SocketConnected(info *ConnectInfo) {
 	app := info.App
-	if info.Sandbox {
-		app = path.Join(app, DEVELOP_SUBFIX)
-	}
 	if sockets[app] == nil {
 		sockets[app] = info
 	} else {
 		sockets[app].Connection = info.Connection
 	}
-
 	go monitorConn(info.Connection, info.App, info.Sandbox)
+
+	// 看看有没有消息需要重新发。
+	if HasPendingMessage(info) {
+		bucket := ErrorBucketForApp(info.App)
+		notification := bucket.Next()
+		go Notify(notification)
+	}
 }
 
 /**
@@ -127,15 +138,25 @@ func Notify(message *Notification) {
 	conn := info.Connection
 	if conn == nil {
 		// 扔进等待队列。
+		AddErrorMessage(message)
 		return
 	}
-	// 生成消息id
+	// 如果ErrorBucket内有东西，等待处理完毕，先扔回去。
+	if HasPendingMessage(info) {
+		log.Println("has peding message!")
+		messageCN <- message
+		return
+	}
 
-	msgID := GetIndentity()
-
+	msgID := GetIdentity()
+	log.Println("store message into leveldb")
+	StoreMessage(message, msgID, info.number)
 	// 消息存入缓存，过期消失，如果失败会尝试重发。
+	log.Println("push!")
 	go pushMessage(conn, message.Token, msgID, message.Payload)
+
 	info.currentIndentity = msgID
+	log.Println("finish push")
 }
 
 func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload) {
@@ -210,18 +231,25 @@ func HandleError(err *APNSRespone) {
 	socketKey := err.App
 	dir := path.Join(appsDir, err.App)
 	if err.Sandbox {
-		socketKey = err.App + DEVELOP_SUBFIX
-		dir = path.Join(dir, DEVELOP_FOLDER)
+		dir = path.Join(strings.Replace(dir, DEVELOP_SUBFIX, "", 1), DEVELOP_FOLDER)
 	} else {
 		dir = path.Join(dir, PRODUCTION_FOLDER)
 	}
 
-	sockets[socketKey].Connection = nil
+	info := sockets[socketKey]
+	info.Connection = nil
 
-	// TODO:重建socket, 重建完成后需要重发该错误ID之后的消息。
 	if err.Command == 8 {
 		LogError(err.Status, err.Identifier)
+		messages := GetMessages(info, err.Identifier+1, info.currentIndentity)
+		for i := 0; i < len(messages); i++ {
+			msg := messages[i]
+			if msg != nil {
+				AddErrorMessage(messages[i])
+			}
+		}
 	}
+
 	go connect(err.App,
 		path.Join(dir, KEY_FILE_NAME),
 		path.Join(dir, CERT_FILE_NAME),

@@ -8,7 +8,7 @@ func main() {
 	log.Print("GO! APNS GO!")
 	Initialize()
 
-	go GenerateIndentity()
+	go GenerateIdentity()
 	// 创建连接。
 	go MakeSocket()
 

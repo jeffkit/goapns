@@ -8,13 +8,15 @@ import (
 ////////////////////// Global Variables ///////////////////////////
 
 /// channels
-var socketCN chan *ConnectInfo = make(chan *ConnectInfo)    // 到APNS的socket频道
-var messageCN chan *Notification = make(chan *Notification) // 新推送消息的频道
-var responseCN chan *APNSRespone = make(chan *APNSRespone)  // APNS服务端返回错误响应频道
-var identityCN chan int32 = make(chan int32, 4)             // id生成器
+var socketCN chan *ConnectInfo = make(chan *ConnectInfo, 10)      // 到APNS的socket频道
+var messageCN chan *Notification = make(chan *Notification, 1000) // 新推送消息的频道
+var responseCN chan *APNSRespone = make(chan *APNSRespone, 100)   // APNS服务端返回错误响应频道
+var identityCN chan int32 = make(chan int32, 4)                   // id生成器
 
 // socket container
 var sockets map[string]*ConnectInfo = make(map[string]*ConnectInfo)
+
+var errorBuckets map[string]*ErrorBucket = make(map[string]*ErrorBucket)
 
 // configs
 
@@ -73,22 +75,22 @@ func LogError(errno byte, msgID int32) {
 	log.Printf("send message %d error: %s", msgID, errMsg)
 }
 
-//APNS_ERROR[strconv.Itoa(0)] = "No error encountered"
-
 // Identity Generator
 
 var identity int32
 var generatorRound int
 
-func GenerateIndentity() {
+func GenerateIdentity() {
+
 	for generatorRound = 0; generatorRound < math.MaxInt32; generatorRound++ {
-		for identity = 0; identity < math.MaxInt32; identity++ {
-			log.Print("Identity", identity)
-			identityCN <- identity
+		for identity = getLatestIdentity(); identity < math.MaxInt32; identity++ {
+			identityCN <- identity + 1
+			log.Println("id is ", identity+1)
+			storeLatestIdentity(identity + 1)
 		}
 	}
 }
 
-func GetIndentity() int32 {
+func GetIdentity() int32 {
 	return <-identityCN
 }
