@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +18,7 @@ func Initialize() {
 	// 初始化一些变量
 	appsDir = "/Users/jeff/Desktop/pushapps"
 	appPort = 8080
+	dbPath = "/Users/jeff/apns.db"
 }
 
 func connect(app string, keyFile string, certFile string, sandbox bool) {
@@ -44,6 +44,7 @@ func connect(app string, keyFile string, certFile string, sandbox bool) {
 	if sandbox {
 		app = app + DEVELOP_SUBFIX
 	}
+	conn.SetDeadline(time.Time{})
 	info := &ConnectInfo{conn, app, sandbox, 0, 0}
 	socketCN <- info
 }
@@ -62,12 +63,9 @@ func monitorConn(conn *tls.Conn, app string, sandbox bool) {
 	log.Printf("return %x, the id is %x", reply, reply[2:])
 	buf := bytes.NewBuffer(reply[2:])
 	var id int32
-	err = binary.Read(buf, binary.BigEndian, &id)
-	if id == 0 {
-		log.Println("invalid id")
-		return
-	}
-	rsp := &APNSRespone{reply[0], reply[1], int32(id), conn, app, sandbox}
+	binary.Read(buf, binary.BigEndian, &id)
+
+	rsp := &APNSRespone{reply[0], reply[1], id, conn, app, sandbox}
 	responseCN <- rsp
 }
 
@@ -160,56 +158,65 @@ func Notify(message *Notification) {
 }
 
 func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload) {
-	fmt.Print(payload)
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := payload.Json()
 	if err != nil {
 		log.Printf("json marshal error %s", err)
 	}
 
 	fmt.Printf("payload %s\n", string(payloadBytes))
-	os.Stdout.Write(payloadBytes)
 
 	buf := new(bytes.Buffer)
+
+	// command
 	var command byte = 1
 	err = binary.Write(buf, binary.BigEndian, command)
 	if err != nil {
 		log.Printf("fail to write command to buffer %s", err)
 	}
 
+	// identifier
 	err = binary.Write(buf, binary.BigEndian, identity)
 	if err != nil {
 		log.Printf("fail to write identity to buffer %s", err)
 	}
 
+	// expires
 	var expires int32 = int32(time.Now().AddDate(0, 0, 1).Unix())
 	err = binary.Write(buf, binary.BigEndian, expires)
 	if err != nil {
 		log.Printf("fail to write expires to buffer %s", err)
 	}
 
+	// token length
 	var tokenLength int16 = 32
 	err = binary.Write(buf, binary.BigEndian, tokenLength)
 	if err != nil {
 		log.Printf("fail to write tokensize to buffer %s", err)
 	}
 
+	// token content
 	tokenBytes, err := hex.DecodeString(token)
 	err = binary.Write(buf, binary.BigEndian, tokenBytes)
 	if err != nil {
 		log.Printf("fail to write token to buffer %s", err)
 	}
 
+	// payload length
 	var payloadLength int16 = int16(len(payloadBytes))
-	fmt.Printf("payloadLength %d\n", len(payloadBytes))
 	err = binary.Write(buf, binary.BigEndian, payloadLength)
 	if err != nil {
 		log.Printf("fail to write payoadLength to buffer %s", err)
 	}
+
+	// payload content
 	err = binary.Write(buf, binary.BigEndian, payloadBytes)
 	if err != nil {
 		log.Printf("fail to write payloadBytes to buffer %s", err)
 	}
 
+	// TODO check bytes
+
+	// write to socket
 	size, err := conn.Write(buf.Bytes())
 	fmt.Printf("body: %x\n", buf.Bytes())
 	log.Printf("write body size %d", size)

@@ -3,18 +3,41 @@ package main
 import (
 	"container/list"
 	"crypto/tls"
-	"log"
+	"encoding/json"
 )
 
+type AlertObject struct {
+	Body               string      `json:body`
+	ActionLocalizedKey string      `json:action-loc-key`
+	LocalizedKey       string      `json:loc-key`
+	localizedArguments interface{} `json:loc-args`
+	launchImage        string      `json:launch-image`
+}
+
 type AlertInfo struct {
-	Alert string `json:"alert"`
-	Badge int    `json:"badge"`
-	Sound string `json:"sound"`
+	Alert interface{} `json:"alert,omitempty"`
+	Badge int         `json:"badge,omitempty"`
+	Sound string      `json:"sound,omitempty"`
 }
 
 type Payload struct {
-	Aps    *AlertInfo  `json:"aps"`
-	Custom interface{} `json:"custom"`
+	Aps    *AlertInfo
+	Custom map[string]interface{}
+}
+
+func (payload *Payload) Json() ([]byte, error) {
+	result := make(map[string]interface{})
+	result["aps"] = payload.Aps
+	if payload.Custom != nil {
+		for k, v := range payload.Custom {
+			result[k] = v
+		}
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 /**
@@ -84,7 +107,6 @@ func HasPendingMessage(info *ConnectInfo) bool {
 }
 
 func (bucket *ErrorBucket) AddErrorMessage(notification *Notification) {
-	log.Println("add error message to list")
 	bucket.ErrorMessages.PushBack(notification)
 }
 
@@ -98,7 +120,6 @@ func (bucket *ErrorBucket) Next() *Notification {
 		ele = bucket.ErrorMessages.Front()
 		if ele != nil {
 			bucket.ErrorMessages.Remove(ele)
-			log.Printf("error value is %x \n", ele)
 			return ele.Value.(*Notification)
 		}
 	}
