@@ -18,6 +18,8 @@ func main() {
 	// 监听队列，视配置定
 	go SubscribeRedisQ()
 
+	go StartFeedbackService()
+
 	// 监听新应用或移除应用
 
 	log.Print("Just wait for the channels")
@@ -26,15 +28,15 @@ func main() {
 		case info := <-socketCN:
 			// 一条通向APNS的socket连接完成！
 			log.Printf("socket for %s created!\n", info.App)
-			SocketConnected(info)
+			go SocketConnected(info)
 		case message := <-messageCN:
 			// 收到一条要推送的消息！
 			log.Printf("got new message %s\n", message)
-			Notify(message)
+			go Notify(message)
 		case rsp := <-responseCN:
 			// 收到一条来自APNS的错误通知
 			log.Printf("got apns erro response for %s\n", rsp.App)
-			HandleError(rsp)
+			go HandleError(rsp)
 		}
 	}
 	log.Print("end of server!")

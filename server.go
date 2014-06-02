@@ -44,7 +44,6 @@ func connect(app string, keyFile string, certFile string, sandbox bool) {
 	if sandbox {
 		app = app + DEVELOP_SUBFIX
 	}
-	conn.SetDeadline(time.Time{})
 	info := &ConnectInfo{conn, app, sandbox, 0, 0}
 	socketCN <- info
 }
@@ -158,18 +157,21 @@ func Notify(message *Notification) {
 }
 
 func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload) {
-	payloadBytes, err := payload.Json()
-	if err != nil {
-		log.Printf("json marshal error %s", err)
+	if len(token) == 0 {
+		log.Println("missing token")
+		return
 	}
 
-	fmt.Printf("payload %s\n", string(payloadBytes))
+	if payload == nil || payload.IsEmpty() {
+		log.Println("not a valid payload")
+		return
+	}
 
 	buf := new(bytes.Buffer)
 
 	// command
 	var command byte = 1
-	err = binary.Write(buf, binary.BigEndian, command)
+	err := binary.Write(buf, binary.BigEndian, command)
 	if err != nil {
 		log.Printf("fail to write command to buffer %s", err)
 	}
@@ -196,12 +198,28 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 
 	// token content
 	tokenBytes, err := hex.DecodeString(token)
+	if len(tokenBytes) != int(tokenLength) {
+		log.Println("invalid token! ")
+		return
+	}
+
 	err = binary.Write(buf, binary.BigEndian, tokenBytes)
 	if err != nil {
 		log.Printf("fail to write token to buffer %s", err)
 	}
 
 	// payload length
+
+	payloadBytes, err := payload.Json()
+	if err != nil {
+		log.Printf("json marshal error %s", err)
+	}
+	if len(payloadBytes) > 256 {
+		// 压缩payload的长度。
+
+	}
+
+	fmt.Printf("payload %s\n", string(payloadBytes))
 	var payloadLength int16 = int16(len(payloadBytes))
 	err = binary.Write(buf, binary.BigEndian, payloadLength)
 	if err != nil {

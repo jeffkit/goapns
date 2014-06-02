@@ -45,8 +45,10 @@ const (
 	CERT_FILE_NAME    = "cer.pem"
 	KEY_FILE_NAME     = "key.pem"
 
-	APNS_ENDPOINT         = "gateway.push.apple.com:2195"
-	APNS_SANDBOX_ENDPOINT = "gateway.sandbox.push.apple.com:2195"
+	APNS_ENDPOINT                  = "gateway.push.apple.com:2195"
+	APNS_SANDBOX_ENDPOINT          = "gateway.sandbox.push.apple.com:2195"
+	APNS_FEEDBACK_ENDPOINT         = "feedback.push.apple.com:2196"
+	APNS_SANDBOX_FEEDBACK_ENDPOINT = "feedback.sandbox.push.apple.com:2196"
 )
 
 func LogError(errno byte, msgID int32) {
@@ -82,7 +84,6 @@ var identity int32
 var generatorRound int
 
 func GenerateIdentity() {
-
 	for generatorRound = 0; generatorRound < math.MaxInt32; generatorRound++ {
 		for identity = getLatestIdentity(); identity < math.MaxInt32; identity++ {
 			identityCN <- identity + 1

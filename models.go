@@ -4,20 +4,40 @@ import (
 	"container/list"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 )
 
 type AlertObject struct {
-	Body               string      `json:body`
-	ActionLocalizedKey string      `json:action-loc-key`
-	LocalizedKey       string      `json:loc-key`
-	localizedArguments interface{} `json:loc-args`
-	launchImage        string      `json:launch-image`
+	Body               string      `json:body,omitempty`
+	ActionLocalizedKey string      `json:action-loc-key,omitempty`
+	LocalizedKey       string      `json:loc-key,omitempty`
+	localizedArguments interface{} `json:loc-args,omitempty`
+	launchImage        string      `json:launch-image,omitempty`
+}
+
+func (alert *AlertObject) IsEmpty() bool {
+	return len(alert.Body) == 0 && len(alert.ActionLocalizedKey) == 0 &&
+		len(alert.LocalizedKey) == 0 && alert.localizedArguments == nil &&
+		len(alert.launchImage) == 0
 }
 
 type AlertInfo struct {
 	Alert interface{} `json:"alert,omitempty"`
-	Badge int         `json:"badge,omitempty"`
+	Badge string      `json:"badge,omitempty,int"`
 	Sound string      `json:"sound,omitempty"`
+}
+
+func (info *AlertInfo) IsEmpty() bool {
+	if info.Alert != nil {
+		if inst, ok := info.Alert.(AlertObject); ok {
+			if inst.IsEmpty() {
+				return len(info.Badge) == 0 && len(info.Sound) == 0
+			}
+		}
+	} else {
+		return len(info.Badge) == 0 && len(info.Sound) == 0
+	}
+	return false
 }
 
 type Payload struct {
@@ -25,7 +45,28 @@ type Payload struct {
 	Custom map[string]interface{}
 }
 
-func (payload *Payload) Json() ([]byte, error) {
+func TruncateString(s string, byteLength int) string {
+	if len(s) <= byteLength {
+		return s
+	}
+
+	result, length, rn := "", 0, []rune(s)
+	for _, r := range rn {
+		if len(string(r))+length > byteLength {
+			break
+		} else {
+			result += string(r)
+			length += len(string(r))
+		}
+	}
+	return result
+}
+
+func (payload *Payload) IsEmpty() bool {
+	return payload.Aps.IsEmpty() && payload.Custom == nil
+}
+
+func (payload *Payload) rawJson() ([]byte, error) {
 	result := make(map[string]interface{})
 	result["aps"] = payload.Aps
 	if payload.Custom != nil {
@@ -38,6 +79,34 @@ func (payload *Payload) Json() ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+func (payload *Payload) Json() ([]byte, error) {
+	json, err := payload.rawJson()
+	if err != nil {
+		return json, err
+	}
+
+	if l := len(json) - 256; l > 0 {
+		if inst, ok := payload.Aps.Alert.(AlertObject); ok {
+			alert := inst.Body
+			if len(alert) < l {
+				return json, errors.New("payload too large")
+			}
+			inst.Body = TruncateString(alert, l)
+			payload.Aps.Alert = inst
+		} else {
+			alert := payload.Aps.Alert.(string)
+			if len(alert) < l {
+				return json, errors.New("payload too large")
+			}
+			payload.Aps.Alert = TruncateString(alert, l)
+		}
+		json, err = payload.rawJson()
+		return json, err
+	} else {
+		return json, err
+	}
 }
 
 /**

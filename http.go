@@ -4,7 +4,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -57,10 +56,7 @@ func pushHandler(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	message := request.FormValue("message")
-	badge, err := strconv.Atoi(request.FormValue("badge"))
-	if err != nil {
-		badge = 0
-	}
+	badge := request.FormValue("badge")
 	sound := request.FormValue("sound")
 	tokens := f["token"]
 
