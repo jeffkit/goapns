@@ -14,12 +14,12 @@ import (
 )
 
 func StartFeedbackService() {
-	tick := time.NewTicker(60 * time.Minute)
+	tick := time.NewTicker(24 * time.Hour)
 
 	for {
 		select {
 		case _ = <-tick.C:
-			log.Println("waiting for feedback job")
+			log.Println("get up for the dead tokens!")
 			runFeedbackJob()
 		}
 	}
@@ -87,6 +87,7 @@ func getFeedback(app string, keyFile string, certFile string, sandbox bool) {
 		reply := make([]byte, 38)
 		n, err := conn.Read(reply)
 		if n < 38 || err != nil {
+			log.Println("EOF? ", err)
 			break
 		}
 		date := bytes.NewBuffer(reply[:4])
@@ -96,6 +97,6 @@ func getFeedback(app string, keyFile string, certFile string, sandbox bool) {
 	}
 
 	content, err := json.Marshal(tokens)
-	log.Println("feedback result ", content)
+	log.Println("feedback result ", string(content))
 	// TODO call back! tell the application.
 }

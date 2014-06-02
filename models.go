@@ -5,6 +5,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"log"
+	"path"
+	"strings"
+	"sync"
 )
 
 type AlertObject struct {
@@ -138,8 +142,38 @@ type ConnectInfo struct {
 	Connection       *tls.Conn
 	App              string
 	Sandbox          bool
-	currentIndentity int32 // 通过该连接已发送的最大ID
-	number           int32 // 连接号数
+	currentIndentity int32      // 通过该连接已发送的最大ID
+	number           int32      // 连接号数
+	lastActivity     int64      // 最后活跃时间
+	mutext           sync.Mutex // 同步锁
+}
+
+func (info *ConnectInfo) Reconnect() {
+	// renew the connection because of the long time idel.
+	if info.Connection == nil {
+		return
+	}
+	info.mutext.Lock()
+	log.Println("get the connectionInfo lock")
+	if info.Connection == nil {
+		log.Println("already reconneting... quit!")
+		info.mutext.Unlock()
+		return
+	}
+
+	info.Connection.Close()
+	info.Connection = nil
+
+	info.mutext.Unlock()
+
+	appname := info.App
+	folder := path.Join(appsDir, appname, PRODUCTION_FOLDER)
+	if info.Sandbox {
+		appname = strings.Replace(appname, DEVELOP_SUBFIX, "", 1)
+		folder = path.Join(appsDir, appname, DEVELOP_FOLDER)
+	}
+
+	go connect(appname, path.Join(folder, KEY_FILE_NAME), path.Join(folder, CERT_FILE_NAME), info.Sandbox)
 }
 
 type ErrorBucket struct {

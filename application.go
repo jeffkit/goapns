@@ -31,7 +31,7 @@ func main() {
 			go SocketConnected(info)
 		case message := <-messageCN:
 			// 收到一条要推送的消息！
-			log.Printf("got new message %s\n", message)
+			//log.Printf("got new message %s\n", message)
 			go Notify(message)
 		case rsp := <-responseCN:
 			// 收到一条来自APNS的错误通知

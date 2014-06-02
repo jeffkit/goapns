@@ -19,6 +19,7 @@ func Initialize() {
 	appsDir = "/Users/jeff/Desktop/pushapps"
 	appPort = 8080
 	dbPath = "/Users/jeff/apns.db"
+	connectionIdleSecs = 600
 }
 
 func connect(app string, keyFile string, certFile string, sandbox bool) {
@@ -44,7 +45,7 @@ func connect(app string, keyFile string, certFile string, sandbox bool) {
 	if sandbox {
 		app = app + DEVELOP_SUBFIX
 	}
-	info := &ConnectInfo{conn, app, sandbox, 0, 0}
+	info := &ConnectInfo{Connection: conn, App: app, Sandbox: sandbox, lastActivity: time.Now().Unix()}
 	socketCN <- info
 }
 
@@ -57,7 +58,12 @@ func monitorConn(conn *tls.Conn, app string, sandbox bool) {
 	n, err := conn.Read(reply)
 
 	if err != nil && reply[0] != 8 {
-		log.Printf("error when read from socket %s, %d", err, n)
+		if strings.HasSuffix(err.Error(), "use of closed network connection") {
+			log.Println("close the network connection")
+			return
+		} else {
+			log.Printf("error when read from socket %s, %d", err, n)
+		}
 	}
 	log.Printf("return %x, the id is %x", reply, reply[2:])
 	buf := bytes.NewBuffer(reply[2:])
@@ -74,14 +80,20 @@ func SocketConnected(info *ConnectInfo) {
 		sockets[app] = info
 	} else {
 		sockets[app].Connection = info.Connection
+		sockets[app].lastActivity = info.lastActivity
 	}
 	go monitorConn(info.Connection, info.App, info.Sandbox)
 
 	// 看看有没有消息需要重新发。
 	if HasPendingMessage(info) {
 		bucket := ErrorBucketForApp(info.App)
-		notification := bucket.Next()
-		go Notify(notification)
+		for {
+			notification := bucket.Next()
+			if notification == nil {
+				break
+			}
+			go Notify(notification)
+		}
 	}
 }
 
@@ -138,10 +150,18 @@ func Notify(message *Notification) {
 		AddErrorMessage(message)
 		return
 	}
+
+	if time.Now().Unix()-info.lastActivity > connectionIdleSecs {
+		log.Println("connection is idle for a long time, reconnect!")
+		go info.Reconnect()
+		AddFallbackMessage(message)
+		return
+	}
+
 	// 如果ErrorBucket内有东西，等待处理完毕，先扔回去。
 	if HasPendingMessage(info) {
 		log.Println("has peding message!")
-		messageCN <- message
+		AddFallbackMessage(message)
 		return
 	}
 
@@ -153,6 +173,7 @@ func Notify(message *Notification) {
 	go pushMessage(conn, message.Token, msgID, message.Payload)
 
 	info.currentIndentity = msgID
+	info.lastActivity = time.Now().Unix()
 	log.Println("finish push")
 }
 
