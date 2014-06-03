@@ -1,12 +1,19 @@
 package main
 
 import (
+	"flag"
 	"log"
 )
 
 func main() {
-	log.Print("GO! APNS GO!")
-	Initialize()
+	configFile := flag.String("file",
+		"/etc/goapns.conf",
+		"location of config file")
+	flag.Parse()
+
+	log.Printf("config file path %s \n", *configFile)
+
+	Initialize(configFile)
 
 	go GenerateIdentity()
 	// 创建连接。

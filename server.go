@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -14,12 +16,27 @@ import (
 	"time"
 )
 
-func Initialize() {
-	// 初始化一些变量
-	appsDir = "/Users/jeff/Desktop/pushapps"
-	appPort = 8080
-	dbPath = "/Users/jeff/apns.db"
-	connectionIdleSecs = 600
+func Initialize(path *string) {
+	file, err := os.Open(*path)
+	if err != nil {
+		log.Fatalf("config file %d not found\n", *path)
+	}
+	content := make([]byte, 1024)
+
+	n, err := file.Read(content)
+	if err != nil && err != io.EOF {
+		log.Fatalln("error occur when reading config file!", err)
+	}
+
+	config := make(map[string]interface{})
+	err = json.Unmarshal(content[:n], &config)
+	if err != nil {
+		log.Fatalln("wrong json format: ", err)
+	}
+	appsDir = config["appsDir"].(string)
+	appPort = int(config["appPort"].(float64))
+	dbPath = config["dbPath"].(string)
+	connectionIdleSecs = int64(config["connectionIdleSecs"].(float64))
 }
 
 func connect(app string, keyFile string, certFile string, sandbox bool) {
@@ -252,8 +269,6 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 	if err != nil {
 		log.Printf("fail to write payloadBytes to buffer %s", err)
 	}
-
-	// TODO check bytes
 
 	// write to socket
 	size, err := conn.Write(buf.Bytes())
