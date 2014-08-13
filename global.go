@@ -13,6 +13,7 @@ var socketCN chan *ConnectInfo = make(chan *ConnectInfo, 10)      // 到APNS的s
 var messageCN chan *Notification = make(chan *Notification, 1000) // 新推送消息的频道
 var responseCN chan *APNSRespone = make(chan *APNSRespone, 100)   // APNS服务端返回错误响应频道
 var identityCN chan int32 = make(chan int32, 4)                   // id生成器
+var countDownCN chan int32 = make(chan int32)                     // 关闭服务倒计时
 
 // socket container
 var sockets map[string]*ConnectInfo = make(map[string]*ConnectInfo)
@@ -27,7 +28,8 @@ var (
 	dbPath             string = "/etc/goapns/db"   // 数据库路径
 	connectionIdleSecs int64  = 600                // socket连接过期时间
 
-	shutingDown bool
+	shutingDown   bool
+	countDownTime int
 )
 
 var APNS_ERROR map[string]string = make(map[string]string)
@@ -55,6 +57,8 @@ const (
 	APNS_SANDBOX_ENDPOINT          = "gateway.sandbox.push.apple.com:2195"
 	APNS_FEEDBACK_ENDPOINT         = "feedback.push.apple.com:2196"
 	APNS_SANDBOX_FEEDBACK_ENDPOINT = "feedback.sandbox.push.apple.com:2196"
+
+	SHUTDOWN_COUNTDOWN_TIME = 4
 )
 
 func LogError(errno byte, msgID int32) {

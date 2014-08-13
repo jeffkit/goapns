@@ -31,6 +31,11 @@ func StartHttpServer() error {
 */
 func pushHandler(w http.ResponseWriter, request *http.Request) {
 	log.Print("handle push request")
+	if shutingDown {
+		io.WriteString(w, "server maintaining... please try later")
+		return
+	}
+
 	request.ParseForm()
 
 	f := request.Form

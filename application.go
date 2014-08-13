@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -50,6 +51,10 @@ func main() {
 			// 收到一条要推送的消息！
 			//log.Printf("got new message %s\n", message)
 			go Notify(message)
+			if shutingDown {
+				log.Println("new message come during shutdown time, reset counter")
+				countDownTime = 1
+			}
 		case rsp := <-responseCN:
 			// 收到一条来自APNS的错误通知
 			log.Printf("got apns erro response for %s\n", rsp.App)
@@ -57,12 +62,29 @@ func main() {
 		case _ = <-signalCN:
 			log.Println("got interupt or kill signal")
 			shutingDown = true
+			if countDownTime == 0 {
+				log.Println("count down not start, start it")
+				countDownTime = 1
+				go countDown()
+			}
+		case _ = <-countDownCN:
+			countDownTime += 1
 		}
 
-		if shutingDown {
-			// 清理工作。
+		if shutingDown && countDownTime >= SHUTDOWN_COUNTDOWN_TIME {
+			log.Println("count down finish, no more new message, shutdown server")
 			break
 		}
 	}
 	log.Print("server shutdonw gracefully!!")
+}
+
+func countDown() {
+	tick := time.NewTicker(1 * time.Second)
+	for {
+		select {
+		case _ = <-tick.C:
+			countDownCN <- 1
+		}
+	}
 }
