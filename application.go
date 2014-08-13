@@ -43,23 +43,19 @@ func main() {
 		syscall.SIGHUP, syscall.SIGQUIT)
 	for {
 		select {
-		case info := <-socketCN:
-			// 一条通向APNS的socket连接完成！
+		case info := <-socketCN: // 一条通向APNS的socket连接完成！
 			log.Printf("socket for %s created!\n", info.App)
 			go SocketConnected(info)
-		case message := <-messageCN:
-			// 收到一条要推送的消息！
-			//log.Printf("got new message %s\n", message)
+		case message := <-messageCN: // 收到一条要推送的消息！
 			go Notify(message)
 			if shutingDown {
 				log.Println("new message come during shutdown time, reset counter")
 				countDownTime = 1
 			}
-		case rsp := <-responseCN:
-			// 收到一条来自APNS的错误通知
+		case rsp := <-responseCN: // 收到一条来自APNS的错误通知
 			log.Printf("got apns erro response for %s\n", rsp.App)
 			go HandleError(rsp)
-		case _ = <-signalCN:
+		case _ = <-signalCN: // 收到系统信号，要关闭服务器
 			log.Println("got interupt or kill signal")
 			shutingDown = true
 			if countDownTime == 0 {
@@ -67,16 +63,20 @@ func main() {
 				countDownTime = 1
 				go countDown()
 			}
-		case _ = <-countDownCN:
+		case _ = <-countDownCN: // 收到倒数
 			countDownTime += 1
 		}
 
 		if shutingDown && countDownTime >= SHUTDOWN_COUNTDOWN_TIME {
 			log.Println("count down finish, no more new message, shutdown server")
+			// 关闭sockets
+			for _, info := range sockets {
+				info.Connection.Close()
+			}
 			break
 		}
 	}
-	log.Print("server shutdonw gracefully!!")
+	log.Print("Bye！server shutdonw gracefully!!")
 }
 
 func countDown() {
