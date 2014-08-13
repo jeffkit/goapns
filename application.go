@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+	defer CapturePanic("Server will shutdonw with an runtime error!")
 	configFile := flag.String("file",
 		"/etc/goapns.conf",
 		"location of config file")
@@ -20,11 +21,14 @@ func main() {
 
 	go GenerateIdentity()
 	// 创建连接。
-	go MakeSocket()
+	err := MakeSocket()
+	if err != nil {
+		log.Println(err)
+		log.Fatalln("fail to create sockets, abort!")
+	}
 
 	// 启动http服务。
 	go StartHttpServer()
-
 	// 监听队列，视配置定
 	go SubscribeRedisQ()
 
@@ -56,8 +60,9 @@ func main() {
 		}
 
 		if shutingDown {
+			// 清理工作。
 			break
 		}
 	}
-	log.Print("end of server!")
+	log.Print("server shutdonw gracefully!!")
 }

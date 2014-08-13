@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"math"
+	"runtime/debug"
 )
 
 ////////////////////// Global Variables ///////////////////////////
@@ -21,10 +22,10 @@ var errorBuckets map[string]*ErrorBucket = make(map[string]*ErrorBucket)
 // configs
 
 var (
-	appsDir            string // 推送应用的根目录
-	appPort            int    // web接口的端口
-	dbPath             string // 数据库路径
-	connectionIdleSecs int64  // socket连接过期时间
+	appsDir            string = "/etc/goapns/apps" // 推送应用的根目录
+	appPort            int    = 9872               // web接口的端口
+	dbPath             string = "/etc/goapns/db"   // 数据库路径
+	connectionIdleSecs int64  = 600                // socket连接过期时间
 
 	shutingDown bool
 )
@@ -99,4 +100,11 @@ func GenerateIdentity() {
 
 func GetIdentity() int32 {
 	return <-identityCN
+}
+
+func CapturePanic(message string) {
+	if err := recover(); err != nil {
+		log.Println(message)
+		log.Printf("got runtime panic %v\n, stack %s\n", err, debug.Stack())
+	}
 }

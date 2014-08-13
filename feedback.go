@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path"
@@ -14,6 +15,7 @@ import (
 )
 
 func StartFeedbackService() {
+	defer CapturePanic("Feedback service occur runtime error!")
 	tick := time.NewTicker(24 * time.Hour)
 
 	for {
@@ -60,6 +62,7 @@ func runFeedbackJob() {
 
 func getFeedback(app string, keyFile string, certFile string, sandbox bool) {
 	// 连接feedback service and read。
+	defer CapturePanic(fmt.Sprintf("get feedback for %s fail", app))
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		log.Printf("server : loadKeys: %s", err)

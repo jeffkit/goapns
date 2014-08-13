@@ -10,15 +10,10 @@ import (
 /**
 启动http服务，接受HTTP推送请求
 */
-func StartHttpServer() {
+func StartHttpServer() error {
 	log.Print("starting Http server")
 	http.HandleFunc("/push", pushHandler)
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		log.Printf("http server start fail %s \n", err)
-	} else {
-		log.Print("http server started!")
-	}
+	return http.ListenAndServe(":8080", nil)
 }
 
 //////////// HTTP Method ////////////////

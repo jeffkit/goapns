@@ -17,6 +17,11 @@ import (
 )
 
 func Initialize(path *string) {
+
+	if path == nil {
+		return
+	}
+
 	file, err := os.Open(*path)
 	if err != nil {
 		log.Fatalf("config file %d not found\n", *path)
@@ -33,6 +38,9 @@ func Initialize(path *string) {
 	if err != nil {
 		log.Fatalln("wrong json format: ", err)
 	}
+
+	defer CapturePanic("problem with reaing config file, appling default options")
+
 	appsDir = config["appsDir"].(string)
 	appPort = int(config["appPort"].(float64))
 	dbPath = config["dbPath"].(string)
@@ -40,6 +48,7 @@ func Initialize(path *string) {
 }
 
 func connect(app string, keyFile string, certFile string, sandbox bool) {
+	defer CapturePanic(fmt.Sprintf("connection to apns server error %s", app))
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		log.Printf("server : loadKeys: %s", err)
@@ -70,6 +79,7 @@ func connect(app string, keyFile string, certFile string, sandbox bool) {
 * 监听APNSSocket的返回结果，当有返回时，意味着发生错误了，这时把错误发到channel，同时关闭socket。
  */
 func monitorConn(conn *tls.Conn, app string, sandbox bool) {
+	defer CapturePanic(fmt.Sprint("panic when monitor Connection %s", app))
 	defer conn.Close()
 	reply := make([]byte, 6)
 	n, err := conn.Read(reply)
@@ -92,6 +102,7 @@ func monitorConn(conn *tls.Conn, app string, sandbox bool) {
 }
 
 func SocketConnected(info *ConnectInfo) {
+	defer CapturePanic("panic after socket connected")
 	app := info.App
 	if sockets[app] == nil {
 		sockets[app] = info
@@ -117,9 +128,11 @@ func SocketConnected(info *ConnectInfo) {
 /**
 初始化socket连接，创建完后扔给channel
 */
-func MakeSocket() {
+func MakeSocket() (e error) {
 	// 创建几个socket？创建完后，由谁管理。
 	walkErr := filepath.Walk(appsDir, func(filePath string, info os.FileInfo, err error) error {
+		defer CapturePanic(fmt.Sprintf("unkonw error when walk to appsDir %s, filePath %s, info.name %s", appsDir, filePath, info.Name()))
+
 		if err != nil {
 			return nil
 		}
@@ -148,6 +161,9 @@ func MakeSocket() {
 
 	if walkErr != nil {
 		log.Print("读取证书有问题哇", walkErr)
+		return walkErr
+	} else {
+		return nil
 	}
 }
 
@@ -155,10 +171,12 @@ func MakeSocket() {
 监听redis队列，主动获取推送消息
 */
 func SubscribeRedisQ() {
-	log.Print("subscribing Redis Queue")
+	defer CapturePanic("redis connectino fail")
+	log.Println("after Crash")
 }
 
 func Notify(message *Notification) {
+	defer CapturePanic("notify fail")
 	// 根据app找到相应的socket。
 	info := sockets[message.App]
 	conn := info.Connection
@@ -187,7 +205,7 @@ func Notify(message *Notification) {
 	StoreMessage(message, msgID, info.number)
 	// 消息存入缓存，过期消失，如果失败会尝试重发。
 	log.Println("push!")
-	go pushMessage(conn, message.Token, msgID, message.Payload)
+	pushMessage(conn, message.Token, msgID, message.Payload)
 
 	info.currentIndentity = msgID
 	info.lastActivity = time.Now().Unix()
@@ -286,6 +304,7 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 - 重发indentifier之后的消息。
 */
 func HandleError(err *APNSRespone) {
+	defer CapturePanic("fail to handle error")
 	log.Print("Got an response from APNS Gateway")
 
 	// 干掉这条socket
