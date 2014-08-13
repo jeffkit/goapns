@@ -20,10 +20,14 @@ var errorBuckets map[string]*ErrorBucket = make(map[string]*ErrorBucket)
 
 // configs
 
-var appsDir string           // 推送应用的根目录
-var appPort int              // web接口的端口
-var dbPath string            // 数据库路径
-var connectionIdleSecs int64 // socket连接过期时间
+var (
+	appsDir            string // 推送应用的根目录
+	appPort            int    // web接口的端口
+	dbPath             string // 数据库路径
+	connectionIdleSecs int64  // socket连接过期时间
+
+	shutingDown bool
+)
 
 var APNS_ERROR map[string]string = make(map[string]string)
 

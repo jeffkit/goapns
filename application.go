@@ -3,6 +3,9 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
@@ -30,6 +33,9 @@ func main() {
 	// 监听新应用或移除应用
 
 	log.Print("Just wait for the channels")
+	signalCN := make(chan os.Signal, 1)
+	signal.Notify(signalCN, syscall.SIGTERM, syscall.SIGINT,
+		syscall.SIGHUP, syscall.SIGQUIT)
 	for {
 		select {
 		case info := <-socketCN:
@@ -44,6 +50,13 @@ func main() {
 			// 收到一条来自APNS的错误通知
 			log.Printf("got apns erro response for %s\n", rsp.App)
 			go HandleError(rsp)
+		case _ = <-signalCN:
+			log.Println("got interupt or kill signal")
+			shutingDown = true
+		}
+
+		if shutingDown {
+			break
 		}
 	}
 	log.Print("end of server!")
