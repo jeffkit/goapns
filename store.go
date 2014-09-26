@@ -16,7 +16,7 @@ func getDB() *levigo.DB {
 		opts := levigo.NewOptions()
 		opts.SetCache(levigo.NewLRUCache(3 << 30))
 		opts.SetCreateIfMissing(true)
-		_db, err := levigo.Open(dbPath, opts)
+		_db, err := levigo.Open(appConfig.DbPath, opts)
 		if err != nil {
 			log.Fatalln("can not open database, ", err)
 		}

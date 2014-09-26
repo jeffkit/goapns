@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"log"
 	"os"
@@ -8,6 +9,38 @@ import (
 	"syscall"
 	"time"
 )
+
+func test_payload() {
+	/**
+	所有接口都使用一致的Json格式接口：参数payload的格式与苹果官方指定的payload格式一致。另有参数：
+	- token: 接收推送的设备ID，可以是一个或多个，这些token必须是统一的sanbox或非sandbox版。
+	- sandbox: 是否沙盒，代表token是否sandbox的。
+	- app：消息属于哪个应用。
+	*/
+	str := `
+	{
+		"payload": {
+		    "aps" : {
+		        "alert" : {
+		            "loc-key" : "GAME_PLAY_REQUEST_FORMAT",
+		            "loc-args" : ["Jenna", "Frank"]
+		        },
+		        "badge" : 9,
+		        "sound" : "bingbong.aiff"
+		    },
+		    "acme1" : "bar",
+			"acme2" : 42
+		},
+		"token": "12344",
+		"sandbox": true,
+		"app": "com.toraysoft.music"
+	}`
+	var dict map[string]interface{} = make(map[string]interface{})
+	json.Unmarshal([]byte(str), &dict)
+	pl, _ := MakePayloadFromMap(dict["payload"].(map[string]interface{}))
+	log.Println(pl.Custom)
+	log.Println(pl.Aps.Alert)
+}
 
 func main() {
 	defer CapturePanic("Server will shutdonw with an runtime error!")
@@ -30,8 +63,6 @@ func main() {
 
 	// 启动http服务。
 	go StartHttpServer()
-	// 监听队列，视配置定
-	go SubscribeRedisQ()
 
 	go StartFeedbackService()
 

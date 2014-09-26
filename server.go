@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
+	"gopkg.in/redis.v2"
 	"log"
 	"os"
 	"path"
@@ -15,37 +15,6 @@ import (
 	"strings"
 	"time"
 )
-
-func Initialize(path *string) {
-
-	if path == nil {
-		return
-	}
-
-	file, err := os.Open(*path)
-	if err != nil {
-		log.Fatalf("config file %d not found\n", *path)
-	}
-	content := make([]byte, 1024)
-
-	n, err := file.Read(content)
-	if err != nil && err != io.EOF {
-		log.Fatalln("error occur when reading config file!", err)
-	}
-
-	config := make(map[string]interface{})
-	err = json.Unmarshal(content[:n], &config)
-	if err != nil {
-		log.Fatalln("wrong json format: ", err)
-	}
-
-	defer CapturePanic("problem with reaing config file, appling default options")
-
-	appsDir = config["appsDir"].(string)
-	appPort = int(config["appPort"].(float64))
-	dbPath = config["dbPath"].(string)
-	connectionIdleSecs = int64(config["connectionIdleSecs"].(float64))
-}
 
 func connect(app string, keyFile string, certFile string, sandbox bool) {
 	defer CapturePanic(fmt.Sprintf("connection to apns server error %s", app))
@@ -112,6 +81,11 @@ func SocketConnected(info *ConnectInfo) {
 	}
 	go monitorConn(info.Connection, info.App, info.Sandbox)
 
+	// 有没有在监听redis队列？
+	if !sockets[app].listeningQueue && appConfig.QueueWithRedis {
+		go WatchMessageQueue(app)
+	}
+
 	// 看看有没有消息需要重新发。
 	if HasPendingMessage(info) {
 		bucket := ErrorBucketForApp(info.App)
@@ -125,13 +99,66 @@ func SocketConnected(info *ConnectInfo) {
 	}
 }
 
+func WatchMessageQueue(app string) {
+	defer CapturePanic("panic when watch message queue")
+
+	cli := redis.NewTCPClient(&redis.Options{
+		Addr:        fmt.Sprintf("%s:%d", appConfig.RedisHost, appConfig.RedisPort),
+		Password:    appConfig.RedisPassword,
+		DB:          appConfig.RedisDB,
+		PoolSize:    int(appConfig.RedisPoolsize),
+		DialTimeout: 10 * time.Second,
+	})
+	sockets[app].listeningQueue = true
+	for {
+		msg := cli.BRPop(20, EXTERN_MESSAGE_QUEUE_PREFIX+app)
+
+		if shutingDown {
+			//把msg格式转换成Notification，然后入内部队列。
+			result, err := msg.Result()
+			if err != nil {
+				log.Println("shuting down, return last message back to queue")
+				cli.RPush(EXTERN_MESSAGE_QUEUE_PREFIX+app, result[1])
+			}
+			break
+		}
+
+		result, err := msg.Result()
+		if err != nil {
+			if err != redis.Nil && !strings.Contains(err.Error(), "i/o timeout") {
+				errMsg := "you need to check the redis config and make sure the redis server is running"
+				log.Printf("ERROR: redis: %s, %s", err, errMsg)
+				time.Sleep(5 * time.Second)
+			}
+			continue
+		}
+		// result[0]为键名 result[1]为键值
+		var dict map[string]interface{} = make(map[string]interface{})
+		err = json.Unmarshal([]byte(result[1]), &dict)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		payload, err := MakePayloadFromMap(dict["payload"].(map[string]interface{}))
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		token := dict["token"].(string)
+		sandbox := dict["sandbox"].(bool)
+		message := &Notification{token, &payload, app, sandbox}
+		go Notify(message)
+	}
+
+}
+
 /**
 初始化socket连接，创建完后扔给channel
 */
 func MakeSocket() (e error) {
 	// 创建几个socket？创建完后，由谁管理。
-	walkErr := filepath.Walk(appsDir, func(filePath string, info os.FileInfo, err error) error {
-		defer CapturePanic(fmt.Sprintf("unkonw error when walk to appsDir %s, filePath %s, info.name %s", appsDir, filePath, info.Name()))
+	walkErr := filepath.Walk(appConfig.AppsDir, func(filePath string, info os.FileInfo, err error) error {
+		defer CapturePanic(fmt.Sprintf("unkonw error when walk to appsDir %s, filePath %s, info.name %s", appConfig.AppsDir, filePath, info.Name()))
 
 		if err != nil {
 			return nil
@@ -144,7 +171,7 @@ func MakeSocket() (e error) {
 			return nil
 		}
 
-		buff := bytes.NewBufferString(appsDir)
+		buff := bytes.NewBufferString(appConfig.AppsDir)
 		buff.WriteRune(os.PathSeparator)
 		app := strings.Replace(path.Dir(filePath), buff.String(), "", 1)
 		log.Println("create socket for app :", app)
@@ -167,14 +194,6 @@ func MakeSocket() (e error) {
 	}
 }
 
-/**
-监听redis队列，主动获取推送消息
-*/
-func SubscribeRedisQ() {
-	defer CapturePanic("redis connectino fail")
-	log.Println("after Crash")
-}
-
 func Notify(message *Notification) {
 	defer CapturePanic("notify fail")
 	// 根据app找到相应的socket。
@@ -186,7 +205,7 @@ func Notify(message *Notification) {
 		return
 	}
 
-	if time.Now().Unix()-info.lastActivity > connectionIdleSecs {
+	if time.Now().Unix()-info.lastActivity > appConfig.ConnectionIdleSecs {
 		log.Println("connection is idle for a long time, reconnect!")
 		go info.Reconnect()
 		AddFallbackMessage(message)
@@ -309,7 +328,7 @@ func HandleError(err *APNSRespone) {
 
 	// 干掉这条socket
 	socketKey := err.App
-	dir := path.Join(appsDir, err.App)
+	dir := path.Join(appConfig.AppsDir, err.App)
 	if err.Sandbox {
 		dir = path.Join(strings.Replace(dir, DEVELOP_SUBFIX, "", 1), DEVELOP_FOLDER)
 	} else {

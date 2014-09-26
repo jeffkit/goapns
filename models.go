@@ -4,30 +4,30 @@ import (
 	"container/list"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"log"
 	"path"
+	"reflect"
 	"strings"
 	"sync"
 )
 
 type AlertObject struct {
-	Body               string      `json:body,omitempty`
-	ActionLocalizedKey string      `json:action-loc-key,omitempty`
-	LocalizedKey       string      `json:loc-key,omitempty`
-	localizedArguments interface{} `json:loc-args,omitempty`
-	launchImage        string      `json:launch-image,omitempty`
+	Body               string      `json:"body,omitempty"`
+	ActionLocalizedKey string      `json:"action-loc-key,omitempty"`
+	LocalizedKey       string      `json:"loc-key,omitempty"`
+	LocalizedArguments interface{} `json:"loc-args,omitempty"`
+	LaunchImage        string      `json:"launch-image,omitempty"`
 }
 
 func (alert *AlertObject) IsEmpty() bool {
 	return len(alert.Body) == 0 && len(alert.ActionLocalizedKey) == 0 &&
-		len(alert.LocalizedKey) == 0 && alert.localizedArguments == nil &&
-		len(alert.launchImage) == 0
+		len(alert.LocalizedKey) == 0 && alert.LocalizedArguments == nil &&
+		len(alert.LaunchImage) == 0
 }
 
 type AlertInfo struct {
 	Alert interface{} `json:"alert,omitempty"`
-	Badge string      `json:"badge,omitempty,int"`
+	Badge int         `json:"badge,omitempty,int"`
 	Sound string      `json:"sound,omitempty"`
 }
 
@@ -35,18 +35,18 @@ func (info *AlertInfo) IsEmpty() bool {
 	if info.Alert != nil {
 		if inst, ok := info.Alert.(AlertObject); ok {
 			if inst.IsEmpty() {
-				return len(info.Badge) == 0 && len(info.Sound) == 0
+				return info.Badge == 0 && len(info.Sound) == 0
 			}
 		}
 	} else {
-		return len(info.Badge) == 0 && len(info.Sound) == 0
+		return info.Badge == 0 && len(info.Sound) == 0
 	}
 	return false
 }
 
 type Payload struct {
-	Aps    *AlertInfo
-	Custom map[string]interface{}
+	Aps    *AlertInfo             `json:"aps,omitempty"`
+	Custom map[string]interface{} `json:"custom,omitempty"`
 }
 
 func TruncateString(s string, byteLength int) string {
@@ -94,16 +94,16 @@ func (payload *Payload) Json() ([]byte, error) {
 	if l := len(json) - 256; l > 0 {
 		if inst, ok := payload.Aps.Alert.(AlertObject); ok {
 			alert := inst.Body
-			if len(alert) < l {
-				return json, errors.New("payload too large")
-			}
+			// if len(alert) < l {
+			// 	return json, errors.New("payload too large")
+			// }
 			inst.Body = TruncateString(alert, l)
 			payload.Aps.Alert = inst
 		} else {
 			alert := payload.Aps.Alert.(string)
-			if len(alert) < l {
-				return json, errors.New("payload too large")
-			}
+			// if len(alert) < l {
+			// 	return json, errors.New("payload too large")
+			// }
 			payload.Aps.Alert = TruncateString(alert, l)
 		}
 		json, err = payload.rawJson()
@@ -111,6 +111,60 @@ func (payload *Payload) Json() ([]byte, error) {
 	} else {
 		return json, err
 	}
+}
+
+func MakePayloadFromString(str string) (payload Payload, e error) {
+	var dict map[string]interface{} = make(map[string]interface{})
+	err := json.Unmarshal([]byte(str), &dict)
+	if err != nil {
+		log.Println(err)
+		return payload, err
+	}
+	return MakePayloadFromMap(dict)
+}
+
+func MakePayloadFromMap(dict map[string]interface{}) (payload Payload, e error) {
+	var custom map[string]interface{} = make(map[string]interface{})
+	for key, v := range dict {
+		if key == "aps" {
+			continue
+		}
+		custom[key] = v
+		delete(dict, key)
+	}
+	if len(custom) != 0 {
+		dict["custom"] = custom
+	}
+
+	bytes, err := json.Marshal(dict)
+	if err != nil {
+		return payload, err
+		log.Println(err)
+	}
+
+	err = json.Unmarshal(bytes, &payload)
+	if err != nil {
+		return payload, err
+		log.Println(err)
+	}
+	if reflect.ValueOf(payload.Aps.Alert).Kind() == reflect.Map {
+		bytes, err := json.Marshal(payload.Aps.Alert)
+		log.Println(string(bytes))
+		if err != nil {
+			return payload, err
+			log.Println(err)
+		} else {
+			var obj AlertObject
+			err := json.Unmarshal(bytes, &obj)
+			if err != nil {
+				return payload, err
+				log.Println(err)
+			}
+
+			payload.Aps.Alert = obj
+		}
+	}
+	return payload, nil
 }
 
 /**
@@ -135,6 +189,54 @@ type APNSRespone struct {
 	Sandbox    bool
 }
 
+type AppConfig struct {
+	AppsDir            string `json:",omitempty"`
+	AppPort            int64  `json:",omitempty"`
+	DbPath             string `json:",omitempty"`
+	ConnectionIdleSecs int64  `json:",omitempty"`
+
+	QueueWithRedis bool   `json:",omitempty"`
+	RedisHost      string `json:",omitempty"`
+	RedisPort      int64  `json:",omitempty"`
+	RedisDB        int64  `json:",omitempty"`
+	RedisPassword  string `json:",omitempty"`
+	RedisPoolsize  int64  `json:",omitempty"`
+}
+
+func NewConfig() AppConfig {
+	return AppConfig{
+		AppsDir:            "/etc/goapns/apps",
+		AppPort:            9872,
+		DbPath:             "/etc/goapns/db",
+		ConnectionIdleSecs: 600,
+		QueueWithRedis:     false,
+		RedisHost:          "localhost",
+		RedisPort:          6379,
+		RedisDB:            0,
+		RedisPassword:      "",
+		RedisPoolsize:      10,
+	}
+}
+
+func (appConfig *AppConfig) Display() {
+	format := `GoAPNS Config:
+	appsDir:%s
+	appPort:%d
+	dbPath:%s
+	connectionIdleSesc:%d
+
+	queueWithRedis:%t
+
+	redisHost:%s
+	redisPort:%d
+	redisDB:%d
+	redisPassword:hidden, (%d)chars
+	redisPoolsize:%d`
+	log.Printf(format, appConfig.AppsDir, appConfig.AppPort, appConfig.DbPath, appConfig.ConnectionIdleSecs,
+		appConfig.QueueWithRedis, appConfig.RedisHost, appConfig.RedisPort, appConfig.RedisDB,
+		len(appConfig.RedisPassword), appConfig.RedisPoolsize)
+}
+
 /**
 * 从本地到apple APNS服务器的Socket连接信息
  */
@@ -146,6 +248,7 @@ type ConnectInfo struct {
 	number           int32      // 连接号数
 	lastActivity     int64      // 最后活跃时间
 	mutext           sync.Mutex // 同步锁
+	listeningQueue   bool       // 正在监听redis的队列吗
 }
 
 func (info *ConnectInfo) Reconnect() {
@@ -167,10 +270,10 @@ func (info *ConnectInfo) Reconnect() {
 	info.mutext.Unlock()
 
 	appname := info.App
-	folder := path.Join(appsDir, appname, PRODUCTION_FOLDER)
+	folder := path.Join(appConfig.AppsDir, appname, PRODUCTION_FOLDER)
 	if info.Sandbox {
 		appname = strings.Replace(appname, DEVELOP_SUBFIX, "", 1)
-		folder = path.Join(appsDir, appname, DEVELOP_FOLDER)
+		folder = path.Join(appConfig.AppsDir, appname, DEVELOP_FOLDER)
 	}
 
 	go connect(appname, path.Join(folder, KEY_FILE_NAME), path.Join(folder, CERT_FILE_NAME), info.Sandbox)

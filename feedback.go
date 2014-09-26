@@ -29,7 +29,7 @@ func StartFeedbackService() {
 
 func runFeedbackJob() {
 	// 遍历应用，创建对应连接收取非法device
-	walkErr := filepath.Walk(appsDir, func(filePath string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(appConfig.AppsDir, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -41,7 +41,7 @@ func runFeedbackJob() {
 			return nil
 		}
 
-		buff := bytes.NewBufferString(appsDir)
+		buff := bytes.NewBufferString(appConfig.AppsDir)
 		buff.WriteRune(os.PathSeparator)
 		app := strings.Replace(path.Dir(filePath), buff.String(), "", 1)
 		sandbox := false

@@ -9,11 +9,11 @@ import (
 ////////////////////// Global Variables ///////////////////////////
 
 /// channels
-var socketCN chan *ConnectInfo = make(chan *ConnectInfo, 10)      // 到APNS的socket频道
-var messageCN chan *Notification = make(chan *Notification, 1000) // 新推送消息的频道
-var responseCN chan *APNSRespone = make(chan *APNSRespone, 100)   // APNS服务端返回错误响应频道
-var identityCN chan int32 = make(chan int32, 4)                   // id生成器
-var countDownCN chan int32 = make(chan int32)                     // 关闭服务倒计时
+var socketCN chan *ConnectInfo = make(chan *ConnectInfo, 10)
+var messageCN chan *Notification = make(chan *Notification, 1000) // message channel
+var responseCN chan *APNSRespone = make(chan *APNSRespone, 100)   // error responses from apns
+var identityCN chan int32 = make(chan int32, 4)                   // id generator channel
+var countDownCN chan int32 = make(chan int32)                     // countdown timer channel
 
 // socket container
 var sockets map[string]*ConnectInfo = make(map[string]*ConnectInfo)
@@ -23,10 +23,7 @@ var errorBuckets map[string]*ErrorBucket = make(map[string]*ErrorBucket)
 // configs
 
 var (
-	appsDir            string = "/etc/goapns/apps" // 推送应用的根目录
-	appPort            int    = 9872               // web接口的端口
-	dbPath             string = "/etc/goapns/db"   // 数据库路径
-	connectionIdleSecs int64  = 600                // socket连接过期时间
+	appConfig AppConfig
 
 	shutingDown   bool
 	countDownTime int
@@ -59,6 +56,8 @@ const (
 	APNS_SANDBOX_FEEDBACK_ENDPOINT = "feedback.sandbox.push.apple.com:2196"
 
 	SHUTDOWN_COUNTDOWN_TIME = 4
+
+	EXTERN_MESSAGE_QUEUE_PREFIX = "goapns:message:"
 )
 
 func LogError(errno byte, msgID int32) {
