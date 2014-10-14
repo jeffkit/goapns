@@ -102,3 +102,36 @@ func storeLatestIdentity(msgID int32) {
 		log.Println("error when store latestIdentity", err)
 	}
 }
+
+func isBadToken(app string, token string) bool {
+	ro := levigo.NewReadOptions()
+	defer ro.Close()
+	value, err := getDB().Get(ro, []byte("BT:"+app+"_"+token))
+	if err != nil {
+		log.Println("error when test if an token is bad")
+		return false
+	}
+	if string(value) == "1" {
+		return true
+	}
+
+	return false
+}
+
+func addBadToken(app string, token string) {
+	wo := levigo.NewWriteOptions()
+	defer wo.Close()
+	err := getDB().Put(wo, []byte("BT:"+app+"_"+token), []byte("1"))
+	if err != nil {
+		log.Println("error when add bad token to db")
+	}
+}
+
+func recoverToken(app string, token string) {
+	wo := levigo.NewWriteOptions()
+	defer wo.Close()
+	err := getDB().Delete(wo, []byte("BT:"+app+"_"+token))
+	if err != nil {
+		log.Println("error when recover token")
+	}
+}

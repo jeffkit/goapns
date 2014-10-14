@@ -118,7 +118,10 @@ func WatchMessageQueue(app string) {
 			result, err := msg.Result()
 			if err != nil {
 				log.Println("shuting down, return last message back to queue")
-				cli.RPush(EXTERN_MESSAGE_QUEUE_PREFIX+app, result[1])
+				if len(result) > 1 {
+					cli.RPush(EXTERN_MESSAGE_QUEUE_PREFIX+app, result[1])
+				}
+
 			}
 			break
 		}
@@ -144,10 +147,17 @@ func WatchMessageQueue(app string) {
 			log.Println(err)
 			continue
 		}
-		token := dict["token"].(string)
 		sandbox := dict["sandbox"].(bool)
-		message := &Notification{token, &payload, app, sandbox}
-		go Notify(message)
+		token := dict["token"]
+		if tk, ok := token.([]interface{}); ok {
+			for t := range tk {
+				message := &Notification{tk[t].(string), &payload, app, sandbox}
+				go Notify(message)
+			}
+		} else {
+			message := &Notification{token.(string), &payload, app, sandbox}
+			go Notify(message)
+		}
 	}
 
 }
@@ -196,6 +206,11 @@ func MakeSocket() (e error) {
 
 func Notify(message *Notification) {
 	defer CapturePanic("notify fail")
+	// 先看该token是否在badtoken集合内
+	if isBadToken(message.App, message.Token) {
+		log.Println("token is a bad token ,skip push :", message.Token)
+		return
+	}
 	// 根据app找到相应的socket。
 	info := sockets[message.App]
 	conn := info.Connection

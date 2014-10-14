@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -16,7 +15,7 @@ import (
 
 func StartFeedbackService() {
 	defer CapturePanic("Feedback service occur runtime error!")
-	tick := time.NewTicker(24 * time.Hour)
+	tick := time.NewTicker(1 * time.Hour)
 
 	for {
 		select {
@@ -62,6 +61,7 @@ func runFeedbackJob() {
 
 func getFeedback(app string, keyFile string, certFile string, sandbox bool) {
 	// 连接feedback service and read。
+	log.Println("get feedback")
 	defer CapturePanic(fmt.Sprintf("get feedback for %s fail", app))
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -76,30 +76,27 @@ func getFeedback(app string, keyFile string, certFile string, sandbox bool) {
 	defer conn.Close()
 
 	if err != nil {
-		log.Println("连接服务器有误", err)
+		log.Println("error when connection to feedback server", err)
 		return
 	}
-	log.Println("client is connect to ", conn.RemoteAddr())
-	state := conn.ConnectionState()
 
-	log.Println("client: hand shake ", state.HandshakeComplete)
-	log.Println("client: mutual", state.NegotiatedProtocolIsMutual)
-
-	tokens := make(map[string]int32)
 	for {
-		reply := make([]byte, 38)
-		n, err := conn.Read(reply)
-		if n < 38 || err != nil {
-			log.Println("EOF? ", err)
+		info := make([]byte, 6)
+		n, err := conn.Read(info)
+		if n < 6 || err != nil {
+			log.Println("1 EOF? ", err)
 			break
 		}
-		date := bytes.NewBuffer(reply[:4])
-		var ts int32
-		binary.Read(date, binary.BigEndian, &ts)
-		tokens[string(reply[:6])] = ts
-	}
+		length := bytes.NewBuffer(info[4:])
+		var tokenLength int16
+		binary.Read(length, binary.BigEndian, &tokenLength)
 
-	content, err := json.Marshal(tokens)
-	log.Println("feedback result ", string(content))
-	// TODO call back! tell the application.
+		token := make([]byte, tokenLength)
+		n, err = conn.Read(token)
+		if n < int(tokenLength) || err != nil {
+			log.Println("2 EOF? ", err)
+			break
+		}
+		addBadToken(app, string(token))
+	}
 }
