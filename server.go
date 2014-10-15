@@ -338,12 +338,21 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 - 重发indentifier之后的消息。
 */
 func HandleError(err *APNSRespone) {
-	defer CapturePanic("fail to handle error")
-	log.Print("Got an response from APNS Gateway")
-
-	// 干掉这条socket
 	socketKey := err.App
 	dir := path.Join(appConfig.AppsDir, err.App)
+	defer func(string message) {
+		go connect(err.App,
+			path.Join(dir, KEY_FILE_NAME),
+			path.Join(dir, CERT_FILE_NAME),
+			err.Sandbox)
+		if err := recover(); err != nil {
+			log.Println(message)
+			log.Printf("got runtime panic %v\n, stack %s\n", err, debug.Stack())
+		}
+	}("fail to handle error")
+
+	// 干掉这条socket
+
 	if err.Sandbox {
 		dir = path.Join(strings.Replace(dir, DEVELOP_SUBFIX, "", 1), DEVELOP_FOLDER)
 	} else {
@@ -363,9 +372,4 @@ func HandleError(err *APNSRespone) {
 			}
 		}
 	}
-
-	go connect(err.App,
-		path.Join(dir, KEY_FILE_NAME),
-		path.Join(dir, CERT_FILE_NAME),
-		err.Sandbox)
 }
