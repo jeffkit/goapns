@@ -345,9 +345,9 @@ func HandleError(err *APNSRespone) {
 			path.Join(dir, KEY_FILE_NAME),
 			path.Join(dir, CERT_FILE_NAME),
 			err.Sandbox)
-		if err := recover(); err != nil {
+		if e := recover(); e != nil {
 			log.Println(message)
-			log.Printf("got runtime panic %v\n, stack %s\n", err, debug.Stack())
+			log.Printf("got runtime panic %v\n, stack %s\n", e, debug.Stack())
 		}
 	}("fail to handle error")
 
