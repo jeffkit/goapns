@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -238,7 +239,7 @@ func Notify(message *Notification) {
 	log.Println("store message into leveldb")
 	StoreMessage(message, msgID, info.number)
 	// 消息存入缓存，过期消失，如果失败会尝试重发。
-	log.Println("push!")
+	log.Println("push! ", message.App, message.Token)
 	pushMessage(conn, message.Token, msgID, message.Payload)
 
 	info.currentIndentity = msgID
@@ -340,7 +341,7 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 func HandleError(err *APNSRespone) {
 	socketKey := err.App
 	dir := path.Join(appConfig.AppsDir, err.App)
-	defer func(string message) {
+	defer func(message string) {
 		go connect(err.App,
 			path.Join(dir, KEY_FILE_NAME),
 			path.Join(dir, CERT_FILE_NAME),
