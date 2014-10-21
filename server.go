@@ -89,10 +89,13 @@ func SocketConnected(info *ConnectInfo) {
 
 	// 看看有没有消息需要重新发。
 	if HasPendingMessage(info) {
+		log.Println("has pending message ! ")
 		bucket := ErrorBucketForApp(info.App)
 		for {
+			log.Println("send pending message")
 			notification := bucket.Next()
 			if notification == nil {
+				log.Println("ok, quit")
 				break
 			}
 			go Notify(notification)
@@ -370,6 +373,7 @@ func HandleError(err *APNSRespone) {
 			for i := 0; i < len(messages); i++ {
 				msg := messages[i]
 				if msg != nil {
+					log.Println("add message to error buket")
 					AddErrorMessage(messages[i])
 				}
 			}
