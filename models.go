@@ -298,6 +298,7 @@ func NewErrorBucket(app string) *ErrorBucket {
 }
 
 func AddErrorMessage(notification *Notification) {
+	log.Println(notification.App)
 	bucket := ErrorBucketForApp(notification.App)
 	bucket.AddErrorMessage(notification)
 }
@@ -309,6 +310,7 @@ func AddFallbackMessage(notification *Notification) {
 
 func HasPendingMessage(info *ConnectInfo) bool {
 	bucket := ErrorBucketForApp(info.App)
+	log.Println(info.App)
 	log.Printf("how many error message?", bucket.ErrorMessages)
 	return bucket.ErrorMessages.Len() != 0 || bucket.FallbackMessages.Len() != 0
 }
