@@ -365,12 +365,15 @@ func HandleError(err *APNSRespone) {
 
 	if err.Command == 8 {
 		LogError(err.Status, err.Identifier)
-		messages := GetMessages(info, err.Identifier+1, info.currentIndentity)
-		for i := 0; i < len(messages); i++ {
-			msg := messages[i]
-			if msg != nil {
-				AddErrorMessage(messages[i])
+		if err.Identifier < info.currentIndentity {
+			messages := GetMessages(info, err.Identifier+1, info.currentIndentity)
+			for i := 0; i < len(messages); i++ {
+				msg := messages[i]
+				if msg != nil {
+					AddErrorMessage(messages[i])
+				}
 			}
 		}
+
 	}
 }
