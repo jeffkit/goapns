@@ -344,9 +344,15 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 func HandleError(err *APNSRespone) {
 	socketKey := err.App
 	dir := path.Join(appConfig.AppsDir, err.App)
-	info := sockets[socketKey]
 	defer func(message string) {
-		go info.Reconnect()
+		appname := err.App
+		if err.Sandbox {
+			appname = strings.Replace(err.App, DEVELOP_SUBFIX, "", 1)
+		}
+		go connect(appname,
+			path.Join(dir, KEY_FILE_NAME),
+			path.Join(dir, CERT_FILE_NAME),
+			err.Sandbox)
 		if e := recover(); e != nil {
 			log.Println(message)
 			log.Printf("got runtime panic %v\n, stack %s\n", e, debug.Stack())
@@ -360,7 +366,7 @@ func HandleError(err *APNSRespone) {
 	} else {
 		dir = path.Join(dir, PRODUCTION_FOLDER)
 	}
-
+	info := sockets[socketKey]
 	info.Connection = nil
 
 	if err.Command == 8 {
