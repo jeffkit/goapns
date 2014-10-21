@@ -287,6 +287,7 @@ type ErrorBucket struct {
 
 func ErrorBucketForApp(app string) *ErrorBucket {
 	if errorBuckets[app] == nil {
+		log.Printf("create new error buket for app %s\n", app)
 		bucket := NewErrorBucket(app)
 		errorBuckets[app] = bucket
 	}
