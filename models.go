@@ -280,9 +280,8 @@ func (info *ConnectInfo) Reconnect() {
 }
 
 type ErrorBucket struct {
-	ErrorMessages    *list.List
-	FallbackMessages *list.List
-	App              string
+	ErrorMessages *list.List
+	App           string
 }
 
 func ErrorBucketForApp(app string) *ErrorBucket {
@@ -294,7 +293,7 @@ func ErrorBucketForApp(app string) *ErrorBucket {
 }
 
 func NewErrorBucket(app string) *ErrorBucket {
-	return &ErrorBucket{list.New(), list.New(), app}
+	return &ErrorBucket{list.New(), app}
 }
 
 func AddErrorMessage(notification *Notification) {
@@ -302,23 +301,13 @@ func AddErrorMessage(notification *Notification) {
 	bucket.AddErrorMessage(notification)
 }
 
-func AddFallbackMessage(notification *Notification) {
-	bucket := ErrorBucketForApp(notification.App)
-	bucket.AddFallbackMessage(notification)
-}
-
 func HasPendingMessage(info *ConnectInfo) bool {
 	bucket := ErrorBucketForApp(info.App)
-	return bucket.ErrorMessages.Len() != 0 || bucket.FallbackMessages.Len() != 0
+	return bucket.ErrorMessages.Len() != 0
 }
 
 func (bucket *ErrorBucket) AddErrorMessage(notification *Notification) {
 	bucket.ErrorMessages.PushBack(notification)
-	log.Printf("error message in bucket", bucket)
-}
-
-func (bucket *ErrorBucket) AddFallbackMessage(notification *Notification) {
-	bucket.FallbackMessages.PushBack(notification)
 }
 
 func (bucket *ErrorBucket) Next() *Notification {
@@ -327,14 +316,6 @@ func (bucket *ErrorBucket) Next() *Notification {
 		ele = bucket.ErrorMessages.Front()
 		if ele != nil {
 			bucket.ErrorMessages.Remove(ele)
-			return ele.Value.(*Notification)
-		}
-	}
-
-	if bucket.FallbackMessages.Len() > 0 {
-		ele = bucket.FallbackMessages.Front()
-		if ele != nil {
-			bucket.FallbackMessages.Remove(ele)
 			return ele.Value.(*Notification)
 		}
 	}

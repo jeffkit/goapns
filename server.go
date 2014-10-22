@@ -221,21 +221,24 @@ func Notify(message *Notification) {
 	conn := info.Connection
 	if conn == nil {
 		// 扔进等待队列。
-		AddErrorMessage(message)
+		time.Sleep(500 * time.Millisecond)
+		messageCN <- message
 		return
 	}
 
 	if time.Now().Unix()-info.lastActivity > appConfig.ConnectionIdleSecs {
 		log.Println("connection is idle for a long time, reconnect!")
 		go info.Reconnect()
-		AddFallbackMessage(message)
+		time.Sleep(500 * time.Millisecond)
+		messageCN <- message
 		return
 	}
 
 	// 如果ErrorBucket内有东西，等待处理完毕，先扔回去。
 	if HasPendingMessage(info) {
 		log.Println("has peding message!")
-		AddFallbackMessage(message)
+		time.Sleep(500 * time.Millisecond)
+		messageCN <- message
 		return
 	}
 
@@ -247,7 +250,7 @@ func Notify(message *Notification) {
 	err := pushMessage(conn, message.Token, msgID, message.Payload)
 	if err != nil {
 		if err.Error() == "socket write error" {
-			AddFallbackMessage(message)
+			messageCN <- message
 		}
 		log.Println(err)
 		return
