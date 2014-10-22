@@ -250,6 +250,7 @@ func Notify(message *Notification) {
 	err := pushMessage(conn, message.Token, msgID, message.Payload)
 	if err != nil {
 		if err.Error() == "socket write error" {
+			log.Println("socket crupt, resend it")
 			messageCN <- message
 		}
 		log.Println(err)
