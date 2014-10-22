@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"gopkg.in/redis.v2"
 	"log"
@@ -243,22 +244,26 @@ func Notify(message *Notification) {
 	StoreMessage(message, msgID, info.number)
 	// 消息存入缓存，过期消失，如果失败会尝试重发。
 	log.Println("push! ", message.App, message.Token)
-	pushMessage(conn, message.Token, msgID, message.Payload)
-
+	err := pushMessage(conn, message.Token, msgID, message.Payload)
+	if err != nil {
+		if err.Error() == "socket write error" {
+			AddFallbackMessage(message)
+		}
+		log.Println(err)
+		return
+	}
 	info.currentIndentity = msgID
 	info.lastActivity = time.Now().Unix()
 	log.Println("finish push")
 }
 
-func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload) {
+func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload) error {
 	if len(token) == 0 {
-		log.Println("missing token")
-		return
+		return errors.New("missing token")
 	}
 
 	if payload == nil || payload.IsEmpty() {
-		log.Println("not a valid payload")
-		return
+		return errors.New("not a valid payload")
 	}
 
 	buf := new(bytes.Buffer)
@@ -267,63 +272,58 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 	var command byte = 1
 	err := binary.Write(buf, binary.BigEndian, command)
 	if err != nil {
-		log.Printf("fail to write command to buffer %s", err)
+		return err
 	}
 
 	// identifier
 	err = binary.Write(buf, binary.BigEndian, identity)
 	if err != nil {
-		log.Printf("fail to write identity to buffer %s", err)
+		return err
 	}
 
 	// expires
 	var expires int32 = int32(time.Now().AddDate(0, 0, 1).Unix())
 	err = binary.Write(buf, binary.BigEndian, expires)
 	if err != nil {
-		log.Printf("fail to write expires to buffer %s", err)
+		return err
 	}
 
 	// token length
 	var tokenLength int16 = 32
 	err = binary.Write(buf, binary.BigEndian, tokenLength)
 	if err != nil {
-		log.Printf("fail to write tokensize to buffer %s", err)
+		return err
 	}
 
 	// token content
 	tokenBytes, err := hex.DecodeString(token)
 	if len(tokenBytes) != int(tokenLength) {
-		log.Println("invalid token! ")
-		return
+		return errors.New("invalid token!")
 	}
 
 	err = binary.Write(buf, binary.BigEndian, tokenBytes)
 	if err != nil {
-		log.Printf("fail to write token to buffer %s", err)
+		return err
 	}
 
 	// payload length
 
 	payloadBytes, err := payload.Json()
 	if err != nil {
-		log.Printf("json marshal error %s", err)
-	}
-	if len(payloadBytes) > 256 {
-		// 压缩payload的长度。
-
+		return err
 	}
 
 	fmt.Printf("payload %s\n", string(payloadBytes))
 	var payloadLength int16 = int16(len(payloadBytes))
 	err = binary.Write(buf, binary.BigEndian, payloadLength)
 	if err != nil {
-		log.Printf("fail to write payoadLength to buffer %s", err)
+		return err
 	}
 
 	// payload content
 	err = binary.Write(buf, binary.BigEndian, payloadBytes)
 	if err != nil {
-		log.Printf("fail to write payloadBytes to buffer %s", err)
+		return err
 	}
 
 	// write to socket
@@ -332,8 +332,9 @@ func pushMessage(conn *tls.Conn, token string, identity int32, payload *Payload)
 	log.Printf("write body size %d", size)
 	if err != nil {
 		log.Printf("error when write to socket %s, %d", err, size)
+		return errors.New("socket write error")
 	}
-
+	return nil
 }
 
 /**
