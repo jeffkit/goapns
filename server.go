@@ -29,11 +29,17 @@ func connect(app string, keyFile string, certFile string, sandbox bool) {
 	if sandbox {
 		endPoint = APNS_SANDBOX_ENDPOINT
 	}
-	conn, err := tls.Dial("tcp", endPoint, &config)
-	if err != nil {
-		log.Println("连接服务器有误", err)
-		return
+	var conn *tls.Conn
+	for {
+		conn, err = tls.Dial("tcp", endPoint, &config)
+		if err != nil {
+			log.Println("连接服务器有误, 2秒后将重连", err)
+			time.Sleep(time.Second * 2)
+		} else {
+			break
+		}
 	}
+
 	log.Println("client is connect to ", conn.RemoteAddr())
 	state := conn.ConnectionState()
 
